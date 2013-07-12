@@ -4,3 +4,10 @@
 *.jar
 *.war
 *.ear
+
+# eclipse files
+.classpath
+.project
+
+# source for libraries
+lib/source/
