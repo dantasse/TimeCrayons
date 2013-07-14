@@ -1,6 +1,8 @@
 package com.dantasse.timecrayons;
 
 import java.awt.Color;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
@@ -10,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import javax.swing.JButton;
 import javax.swing.JFrame;
 
 import org.jfree.chart.ChartFactory;
@@ -34,51 +37,59 @@ public class LineChart extends JFrame {
     private double x1 = 0; // x coordinate where you started dragging
     private double tempBoxX1 = 0;
     private XYBoxAnnotation tempBox = new XYBoxAnnotation(0, 0, 0, 0);
+    private JButton button = new JButton("Train Model");
+    private Model model;
 
     public LineChart(String applicationTitle, String chartTitle) {
         super(applicationTitle);
         XYDataset dataset = createDataset();
         final JFreeChart chart = createChart(dataset, chartTitle);
         final ChartPanel chartPanel = new ChartPanel(chart);
+        setContentPane(chartPanel);
         chartPanel.setPreferredSize(new java.awt.Dimension(1000, 600));
         chartPanel.setDomainZoomable(false);
         chartPanel.setRangeZoomable(false);
+        chartPanel.add(button);
 
         chartPanel.addMouseMotionListener(new MouseMotionAdapter() {
 
             @Override
             public void mouseDragged(MouseEvent e) {
                 super.mouseDragged(e);
-                double tempBoxX2 = chart.getXYPlot().getDomainAxis()
+                double tempBoxX2 = chart
+                        .getXYPlot()
+                        .getDomainAxis()
                         .java2DToValue(e.getX(), chartPanel.getScreenDataArea(),
                                 chart.getXYPlot().getDomainAxisEdge());
                 chart.getXYPlot().removeAnnotation(tempBox);
-                tempBox = new XYBoxAnnotation(Math.min(tempBoxX1, tempBoxX2),
-                        chart.getXYPlot().getRangeAxis().getLowerBound(),
-                        Math.max(tempBoxX1, tempBoxX2),
-                        chart.getXYPlot().getRangeAxis().getUpperBound(),
-                        null, // line
+                tempBox = new XYBoxAnnotation(Math.min(tempBoxX1, tempBoxX2), chart.getXYPlot()
+                        .getRangeAxis().getLowerBound(), Math.max(tempBoxX1, tempBoxX2), chart
+                        .getXYPlot().getRangeAxis().getUpperBound(), null, // line
                         null, // outline paint
                         new Color(0, 0, 128, 32)); // fill paint
                 tempBox.setToolTipText("this is temporary");
+                // ^ dumb hack b/c otherwise permanent boxes get removed when
+                // removing this
+                // temporary box as well.
                 chart.getXYPlot().addAnnotation(tempBox);
             }
         });
-        
+
         chartPanel.addMouseListener(new MouseAdapter() {
 
             @Override
             public void mouseReleased(MouseEvent arg0) {
                 chart.getXYPlot().removeAnnotation(tempBox);
-                double x2 = chart.getXYPlot().getDomainAxis()
+                double x2 = chart
+                        .getXYPlot()
+                        .getDomainAxis()
                         .java2DToValue(arg0.getX(), chartPanel.getScreenDataArea(),
                                 chart.getXYPlot().getDomainAxisEdge());
-                selectedTimes.add(new SimpleTimePeriod((long)Math.min(x1, x2), (long)Math.max(x1, x2))); 
-                XYBoxAnnotation annotationBox = new XYBoxAnnotation(Math.min(x1, x2),
-                        chart.getXYPlot().getRangeAxis().getLowerBound(),
-                        Math.max(x1, x2),
-                        chart.getXYPlot().getRangeAxis().getUpperBound(),
-                        null, // line
+                selectedTimes.add(new SimpleTimePeriod((long) Math.min(x1, x2), (long) Math.max(x1,
+                        x2)));
+                XYBoxAnnotation annotationBox = new XYBoxAnnotation(Math.min(x1, x2), chart
+                        .getXYPlot().getRangeAxis().getLowerBound(), Math.max(x1, x2), chart
+                        .getXYPlot().getRangeAxis().getUpperBound(), null, // line
                         null, // outline paint
                         new Color(0, 0, 128, 32)); // fill paint
                 annotationBoxes.add(annotationBox);
@@ -87,14 +98,22 @@ public class LineChart extends JFrame {
 
             @Override
             public void mousePressed(MouseEvent arg0) {
-                x1 = chart.getXYPlot().getDomainAxis().java2DToValue(
-                        arg0.getX(), chartPanel.getScreenDataArea(),
+                x1 = chart
+                        .getXYPlot()
+                        .getDomainAxis()
+                        .java2DToValue(arg0.getX(), chartPanel.getScreenDataArea(),
                                 chart.getXYPlot().getDomainAxisEdge());
                 tempBoxX1 = x1;
             }
-
         });
-        setContentPane(chartPanel);
+        
+        model = new Model();
+        button.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                model.train(selectedTimes);
+            }
+        });
     }
 
     private XYDataset createDataset() {
