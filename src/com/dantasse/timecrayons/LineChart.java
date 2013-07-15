@@ -85,6 +85,9 @@ public class LineChart extends JFrame {
                         .getDomainAxis()
                         .java2DToValue(arg0.getX(), chartPanel.getScreenDataArea(),
                                 chart.getXYPlot().getDomainAxisEdge());
+                if (x1 == x2)
+                    return; // TODO this is a quick fix for a bigger problem involving creating
+                // SelectedTimes that are really just points - start = end. weird.
                 selectedTimes.add(new SimpleTimePeriod((long) Math.min(x1, x2), (long) Math.max(x1,
                         x2)));
                 XYBoxAnnotation annotationBox = new XYBoxAnnotation(Math.min(x1, x2), chart
@@ -94,6 +97,8 @@ public class LineChart extends JFrame {
                         new Color(0, 0, 128, 32)); // fill paint
                 annotationBoxes.add(annotationBox);
                 chart.getXYPlot().addAnnotation(annotationBox);
+                
+                button.doClick(); // TODO haha
             }
 
             @Override
@@ -112,6 +117,16 @@ public class LineChart extends JFrame {
             @Override
             public void actionPerformed(ActionEvent e) {
                 model.train(selectedTimes, dataset);
+                for (TimePeriod hitTp : model.findOtherHits()) {
+                    System.out.println(hitTp.getStart() + " " + hitTp.getEnd());
+                    double x0 = hitTp.getStart().getTime();
+                    double x1 = hitTp.getEnd().getTime();
+                    double y0 = chart.getXYPlot().getRangeAxis().getLowerBound();
+                    double y1 = chart.getXYPlot().getRangeAxis().getUpperBound();
+//                    chart.getXYPlot().clearAnnotations(); // TODO clear the green ones, anyway
+                    chart.getXYPlot().addAnnotation(new XYBoxAnnotation(x0, y0, x1, y1,
+                            null /*stroke*/, null /*outlineFill*/, new Color(0, 128, 0, 32)));
+                }
             }
         });
     }

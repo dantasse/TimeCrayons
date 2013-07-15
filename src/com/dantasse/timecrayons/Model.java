@@ -16,6 +16,7 @@ import org.jfree.data.time.TimeSeriesCollection;
 import org.jfree.data.time.TimeSeriesDataItem;
 
 import weka.classifiers.trees.J48;
+import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.converters.ConverterUtils.DataSource;
 import au.com.bytecode.opencsv.CSVWriter;
@@ -23,48 +24,69 @@ import au.com.bytecode.opencsv.CSVWriter;
 public class Model {
 
     private Random random = new Random();
+    /** |instances| is the feature vectors. */
+    private Instances instances = null;
+    private J48 decisionTree;
 
-    public void train(List<TimePeriod> selectedTimes, TimeSeriesCollection dataset) {
-        // argh. weka really wants you to read in an arff file to get started.
-        // okay then.
-        writeCsvFile(selectedTimes, dataset, "foo.csv");
-        Instances instances = null;
+    public void train(List<TimePeriod> selectedTimes, TimeSeriesCollection timeSerieses) {
+        // argh. weka really wants you to read in an arff file to get started. okay then.
+        writeCsvFile(selectedTimes, timeSerieses, "foo.csv");
         try {
             instances = new DataSource("foo.csv").getDataSet();
             instances.setClassIndex(0);
         } catch (Exception e) {
             e.printStackTrace(); // welp
         }
-        J48 decisionTree = new J48();
-        
+
+        decisionTree = new J48();
         try {
             decisionTree.buildClassifier(instances);
-            decisionTree.classifyInstance(instances.instance(0));
+
         } catch (Exception e) {
             e.printStackTrace();
         }
-        for (int i = 0; i < instances.numInstances(); i++) {
-            System.out.println(instances.instance(i));
-        } // TODO pick up here
-
     }
+    
+    /** After training the model, use it to find other places that look like "yes" instances.
+     * Undefined behavior if you haven't called train() yet. */
+    public List<TimePeriod> findOtherHits() {
+        List<TimePeriod> hits = new ArrayList<TimePeriod>();
+        try {
+            for (int i = 0; i < instances.numInstances(); i++) {
+                Instance inst = instances.instance(i);
+                double result = decisionTree.classifyInstance(inst);
+                String resultStr = inst.classAttribute().value((int) result);
+                if (resultStr.equals("yes")) {
+                    long start = (long) inst.value(10); // TODO magic numbers
+                    long end = (long) inst.value(11);
+
+                    hits.add(new SimpleTimePeriod(start, end));
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace(); // weka!
+        }
+        return hits;
+    }
+
+    
 
     /**
      * Writes features to a dummy CSV file so that you can read it back in with
      * weka.
      */
-    private void writeCsvFile(List<TimePeriod> selectedTimes, TimeSeriesCollection dataset, String filename) {
+    private void writeCsvFile(List<TimePeriod> yesTimes, TimeSeriesCollection dataset, String filename) {
         CSVWriter writer = null;
         try {
             writer = new CSVWriter(new FileWriter(filename));
         } catch (IOException ioe) {
             ioe.printStackTrace();
         }
-        writer.writeNext(new String[] {"class", "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"}); //TODO
+        writer.writeNext(new String[] {"class", "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "start", "end"}); //TODO
         
         // Generate the Yes instances
-        for(TimePeriod selectedTime : selectedTimes) {
-            TimeSeriesCollection subset = makeSubset(dataset, selectedTime.getStart(), selectedTime.getEnd());
+        for(TimePeriod yesTime : yesTimes) {
+            TimeSeriesCollection subset = makeSubset(dataset, yesTime.getStart(), yesTime.getEnd());
             List<Object> features = generateFeatures(subset, "yes");
             List<String> featuresStr = new ArrayList<String>();
             for (Object feature : features) {
@@ -80,7 +102,7 @@ public class Model {
         // then pick N intervals from that bag and use them as the "no" examples
         long shortestInterval = Long.MAX_VALUE;
         long longestInterval = 0;
-        for (TimePeriod selectedTime : selectedTimes) {
+        for (TimePeriod selectedTime : yesTimes) {
             long length = selectedTime.getEnd().getTime() - selectedTime.getStart().getTime();
             if (length < shortestInterval)
                 shortestInterval = length;
@@ -88,29 +110,45 @@ public class Model {
                 longestInterval = length;
         }
         
-        List<TimePeriod> unselectedTimes = new ArrayList<TimePeriod>();
+        List<TimePeriod> unclassifiedTimes = new ArrayList<TimePeriod>();
+        List<TimePeriod> noTimes = new ArrayList<TimePeriod>();
         // TODO: this only checks the first time series in the dataset
         for(Object timePeriodObj : dataset.getSeries(0).getTimePeriods()) {
             TimePeriod dataPoint = (TimePeriod) timePeriodObj;
             Date potentialStart = dataPoint.getStart();
-            long potentialLength = (long) random.nextInt((int)(longestInterval - shortestInterval)) + shortestInterval;
+            // +1 so it doesn't break if you only have one interval)
+            long potentialLength = (long) random.nextInt((int)(longestInterval - shortestInterval) + 1) + shortestInterval;
             Date potentialEnd = new Date(potentialStart.getTime() + potentialLength);
             TimePeriod potentialTimePeriod = new SimpleTimePeriod(potentialStart, potentialEnd);
-            if (!overlapsAny(potentialTimePeriod, selectedTimes)) {
-                unselectedTimes.add(potentialTimePeriod);
+            if (overlapsAny(potentialTimePeriod, yesTimes)) {
+                unclassifiedTimes.add(potentialTimePeriod);
+            } else {
+                noTimes.add(potentialTimePeriod);
             }
         }
-        Collections.shuffle(unselectedTimes);
-        unselectedTimes = unselectedTimes.subList(0, selectedTimes.size()); // TODO: only gets a few NO instances
+        Collections.shuffle(noTimes);
+        unclassifiedTimes = noTimes.subList(yesTimes.size() * 3, noTimes.size());
+        noTimes = noTimes.subList(0, yesTimes.size() * 3); // TODO: only gets a few NO instances
         
-        for (TimePeriod unselectedTime : unselectedTimes) {
-            TimeSeriesCollection subset = makeSubset(dataset, unselectedTime.getStart(), unselectedTime.getEnd());
+        for (TimePeriod noTime : noTimes) {
+            TimeSeriesCollection subset = makeSubset(dataset, noTime.getStart(), noTime.getEnd());
             List<Object> features = generateFeatures(subset, "no");
             List<String> featuresStr = new ArrayList<String>();
             for (Object feature : features) {
                 featuresStr.add(feature.toString());
             }
             writer.writeNext(featuresStr.toArray(new String[featuresStr.size()])); // java!
+        }
+        
+        for (TimePeriod unclassifiedTime : unclassifiedTimes) {
+            TimeSeriesCollection subset = makeSubset(dataset, unclassifiedTime.getStart(), unclassifiedTime.getEnd());
+            List<Object> features = generateFeatures(subset, "?");
+            List<String> featuresStr = new ArrayList<String>();
+            for (Object feature : features) {
+                featuresStr.add(feature.toString());
+            }
+            writer.writeNext(featuresStr.toArray(new String[featuresStr.size()])); // java!
+            // TODO code duplication!
         }
 
         try {
@@ -162,7 +200,19 @@ public class Model {
         features.add(data.getSeries(2).getMinY());
         features.add(data.getSeries(2).getMaxY());
         features.add(mean(data.getSeries(2)));
-
+        
+        // features 9 and 10: the start and end time of this instance.
+        // TODO: I don't think these should really be features, now should they?
+        // (I don't want start and end time to get factored into whether this is a Yes or a No!)
+        if (data.getSeries(0).getItemCount() > 0) {
+            features.add(data.getSeries(0).getTimePeriod(0).getStart().getTime());
+            features.add(data.getSeries(0).getTimePeriod(data.getSeries(0).getItemCount() - 1)
+                    .getEnd().getTime());
+        } else {
+            features.add("?");
+            features.add("?"); // TODO ugh ugh
+        }
+        
         return features;
     }
     
