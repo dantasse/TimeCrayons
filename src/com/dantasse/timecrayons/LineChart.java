@@ -42,7 +42,7 @@ public class LineChart extends JFrame {
 
     public LineChart(String applicationTitle, String chartTitle) {
         super(applicationTitle);
-        XYDataset dataset = createDataset();
+        final TimeSeriesCollection dataset = createDataset();
         final JFreeChart chart = createChart(dataset, chartTitle);
         final ChartPanel chartPanel = new ChartPanel(chart);
         setContentPane(chartPanel);
@@ -111,12 +111,12 @@ public class LineChart extends JFrame {
         button.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                model.train(selectedTimes);
+                model.train(selectedTimes, dataset);
             }
         });
     }
 
-    private XYDataset createDataset() {
+    private TimeSeriesCollection createDataset() {
         CSV csv = new CSV();
         CategoryDataset cat = null;
         try {
